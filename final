@@ -1,0 +1,1280 @@
+import os
+for dirname, _, filenames in os.walk('/kaggle/input'):
+    for filename in filenames:
+       # print(os.path.join(dirname, filename))
+        pass
+
+import numpy as np 
+import cv2 as cv 
+import matplotlib.pyplot as plt 
+import os 
+import math
+
+# Helper function to display images using matplotlib 
+def show_image(img, title, cmap='gray'): 
+    plt.figure(figsize=(6, 4)) 
+    plt.imshow(img, cmap=cmap) 
+    plt.title(title) 
+    plt.axis('off') 
+    plt.show() 
+
+# Function to enhance image for feature extraction
+def enhance_image_for_feature_extraction(gray):
+    """Apply advanced preprocessing to enhance image for feature extraction"""
+    # Apply CLAHE for contrast enhancement
+    clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    contrast_enhanced = clahe.apply(gray)
+    
+    # Apply bilateral filter to reduce noise while preserving edges
+    bilateral = cv.bilateralFilter(contrast_enhanced, 9, 75, 75)
+    
+    # Apply sharpening
+    kernel_sharpening = np.array([
+        [-1, -1, -1],
+        [-1, 9, -1],
+        [-1, -1, -1]
+    ])
+    sharpened = cv.filter2D(bilateral, -1, kernel_sharpening)
+    
+    return sharpened
+
+# Function to extract Canny edges
+def extract_canny_edges(image, low_thresh=None, high_thresh=None):
+    # If thresholds not provided, calculate them from the image
+    if low_thresh is None or high_thresh is None:
+        # Calculate thresholds based on image statistics
+        median = np.median(image)
+        sigma = 0.33
+        low_thresh = int(max(0, (1.0 - sigma) * median))
+        high_thresh = int(min(255, (1.0 + sigma) * median))
+    
+    # Apply Canny
+    edges = cv.Canny(image, low_thresh, high_thresh)
+    
+    # Apply closing to connect nearby edges
+    kernel = np.ones((3, 3), np.uint8)
+    edges = cv.morphologyEx(edges, cv.MORPH_CLOSE, kernel)
+    
+    return edges
+
+# Function to extract Harris corners
+def extract_harris_corners(image, block_size=2, ksize=3, k=0.04, threshold_factor=0.2, max_corners=100):
+    # Apply Harris corner detection
+    harris_response = cv.cornerHarris(image, block_size, ksize, k)
+    
+    # Normalize the response
+    harris_response = cv.normalize(harris_response, None, 0, 255, cv.NORM_MINMAX)
+    harris_response = np.uint8(harris_response)
+    
+    # Threshold the response
+    threshold = threshold_factor * harris_response.max()
+    harris_response[harris_response < threshold] = 0
+    
+    # Find local maxima
+    corners = cv.dilate(harris_response, None)
+    corners[corners != harris_response] = 0
+    
+    # Get corner coordinates
+    corner_coords = np.argwhere(corners > 0)
+    
+    # Create corner mask
+    corner_mask = np.zeros_like(image)
+    
+    if len(corner_coords) > 0:
+        # Limit number of corners if needed
+        if len(corner_coords) > max_corners:
+            # Sort corners by response strength
+            corner_strengths = harris_response[corner_coords[:, 0], corner_coords[:, 1]]
+            sorted_indices = np.argsort(corner_strengths)[::-1]
+            corner_coords = corner_coords[sorted_indices[:max_corners]]
+        
+        # Mark corners in the mask
+        for corner in corner_coords:
+            y, x = corner
+            cv.circle(corner_mask, (x, y), 3, 255, -1)
+    
+    return corner_mask, corner_coords
+
+# Function to apply morphological operations to clean features
+def apply_morphological_operations(image, operation='clean'):
+    if operation == 'clean':
+        # Close small holes inside the foreground objects
+        kernel = np.ones((3, 3), np.uint8)
+        closing = cv.morphologyEx(image, cv.MORPH_CLOSE, kernel)
+        
+        # Remove small noise
+        kernel = np.ones((3, 3), np.uint8)
+        opening = cv.morphologyEx(closing, cv.MORPH_OPEN, kernel)
+        
+        return opening
+    
+    elif operation == 'enhance':
+        # Dilate to enhance features
+        kernel = np.ones((3, 3), np.uint8)
+        dilation = cv.dilate(image, kernel, iterations=1)
+        
+        # Erode to maintain shape
+        erosion = cv.erode(dilation, kernel, iterations=1)
+        
+        return erosion
+    
+    elif operation == 'denoise':
+        # Remove noise
+        kernel = np.ones((2, 2), np.uint8)
+        opening = cv.morphologyEx(image, cv.MORPH_OPEN, kernel)
+        
+        # Fill small holes
+        kernel = np.ones((3, 3), np.uint8)
+        closing = cv.morphologyEx(opening, cv.MORPH_CLOSE, kernel)
+        
+        return closing
+    
+    return image
+
+# Function to extract geometric features
+def extract_geometric_features(edges, corners):
+    features = {}
+    
+    # Count corners (with minimum value to prevent zeros)
+    corner_count = max(4, np.sum(corners > 0))
+    features['corner_count'] = corner_count
+    
+    # Calculate edge density (with minimum value to prevent zeros)
+    edge_pixels = np.sum(edges > 0)
+    total_pixels = edges.shape[0] * edges.shape[1]
+    edge_density = edge_pixels / total_pixels if total_pixels > 0 else 0.01
+    features['edge_density'] = max(0.01, edge_density)
+    
+    # Calculate edge-to-corner ratio
+    features['edge_corner_ratio'] = max(0.1, edge_pixels / corner_count)
+    
+    # Calculate edge continuity 
+    kernel = np.ones((3, 3), np.uint8)
+    dilated_edges = cv.dilate(edges, kernel, iterations=1)
+    dilated_edge_pixels = np.sum(dilated_edges > 0)
+    edge_continuity = dilated_edge_pixels / (edge_pixels + 1)  # Add 1 to avoid division by zero
+    features['edge_continuity'] = max(1.1, edge_continuity)
+    
+    # Calculate corner distribution
+    h, w = edges.shape
+    center_y, center_x = h // 2, w // 2
+    corner_positions = np.argwhere(corners > 0)
+    
+    if len(corner_positions) > 0:
+        distances = np.sqrt(((corner_positions[:, 0] - center_y) ** 2) + 
+                           ((corner_positions[:, 1] - center_x) ** 2))
+        features['corner_std_dev'] = np.std(distances)
+        features['corner_mean_dist'] = np.mean(distances)
+    else:
+        # Fallback values
+        features['corner_std_dev'] = 5.0
+        features['corner_mean_dist'] = 20.0
+    
+    return features
+
+# Function to extract features from contours
+def extract_features_from_contours(contour, image_shape):
+    features = {}
+    
+    # Calculate basic shape features
+    x, y, w, h = cv.boundingRect(contour)
+    features['aspect_ratio'] = float(w) / h if h > 0 else 0
+    features['area'] = cv.contourArea(contour)
+    features['perimeter'] = cv.arcLength(contour, True)
+    
+    # Calculate solidity
+    hull = cv.convexHull(contour)
+    hull_area = cv.contourArea(hull)
+    features['solidity'] = features['area'] / hull_area if hull_area > 0 else 0
+    
+    # Calculate extent
+    rect_area = w * h
+    features['extent'] = features['area'] / rect_area if rect_area > 0 else 0
+    
+    # Calculate circularity
+    features['circularity'] = (4 * np.pi * features['area']) / (features['perimeter'] ** 2) if features['perimeter'] > 0 else 0
+    
+    # Calculate roundness of corners
+    epsilon = 0.02 * features['perimeter']
+    approx = cv.approxPolyDP(contour, epsilon, True)
+    features['corners'] = len(approx)
+    
+    # Fit ellipse for oval shapes
+    if len(contour) >= 5:
+        ellipse = cv.fitEllipse(contour)
+        features['ellipse_ratio'] = ellipse[1][0] / ellipse[1][1] if ellipse[1][1] > 0 else 0
+    else:
+        features['ellipse_ratio'] = 0
+    
+    # Calculate symmetry
+    mask = np.zeros(image_shape, dtype=np.uint8)
+    cv.drawContours(mask, [contour], 0, 255, -1)
+    
+    # Vertical symmetry
+    left_half = mask[:, :mask.shape[1]//2]
+    right_half = mask[:, mask.shape[1]//2:]
+    right_half_flipped = cv.flip(right_half, 1)
+    
+    if left_half.shape[1] != right_half_flipped.shape[1]:
+        min_width = min(left_half.shape[1], right_half_flipped.shape[1])
+        left_half = left_half[:, :min_width]
+        right_half_flipped = right_half_flipped[:, :min_width]
+    
+    vertical_symmetry = np.sum(left_half == right_half_flipped) / (left_half.size) if left_half.size > 0 else 0
+    features['vertical_symmetry'] = vertical_symmetry
+    
+    # Horizontal symmetry
+    top_half = mask[:mask.shape[0]//2, :]
+    bottom_half = mask[mask.shape[0]//2:, :]
+    bottom_half_flipped = cv.flip(bottom_half, 0)
+    
+    if top_half.shape[0] != bottom_half_flipped.shape[0]:
+        min_height = min(top_half.shape[0], bottom_half_flipped.shape[0])
+        top_half = top_half[:min_height, :]
+        bottom_half_flipped = bottom_half_flipped[:min_height, :]
+    
+    horizontal_symmetry = np.sum(top_half == bottom_half_flipped) / (top_half.size) if top_half.size > 0 else 0
+    features['horizontal_symmetry'] = horizontal_symmetry
+    
+    return features
+
+# New function to correct USB orientation
+def correct_usb_orientation(image, contour, gray, thresh):
+    # Get the minimum area rectangle for the contour
+    rect = cv.minAreaRect(contour)
+    angle = rect[2]
+    
+    # Normalize angle to [-90, 90]
+    if angle < -45:
+        angle += 90
+    elif angle > 45:
+        angle -= 90
+    
+    # Skip correction if angle is between [-15, 15] degrees
+    if -15 <= angle <= 15:
+        return image, contour, gray, thresh
+    
+    # Calculate the size of the rotated image to prevent cropping
+    h, w = image.shape[:2]
+    abs_cos = abs(math.cos(math.radians(angle)))
+    abs_sin = abs(math.sin(math.radians(angle)))
+    
+    # New dimensions to accommodate the rotated image
+    new_w = int(h * abs_sin + w * abs_cos)
+    new_h = int(h * abs_cos + w * abs_sin)
+    
+    # Get rotation matrix
+    center = (w // 2, h // 2)
+    M = cv.getRotationMatrix2D(center, angle, 1.0)
+    
+    # Adjust translation to center the rotated image
+    M[0, 2] += (new_w - w) // 2
+    M[1, 2] += (new_h - h) // 2
+    
+    # Rotate the images
+    rotated_image = cv.warpAffine(image, M, (new_w, new_h), flags=cv.INTER_LINEAR, borderMode=cv.BORDER_CONSTANT, borderValue=(0, 0, 0))
+    rotated_gray = cv.warpAffine(gray, M, (new_w, new_h), flags=cv.INTER_LINEAR, borderMode=cv.BORDER_CONSTANT, borderValue=0)
+    rotated_thresh = cv.warpAffine(thresh, M, (new_w, new_h), flags=cv.INTER_NEAREST, borderMode=cv.BORDER_CONSTANT, borderValue=0)
+    
+    # Transform the contour points
+    contour_points = contour.reshape(-1, 2).astype(np.float32)
+    ones = np.ones((contour_points.shape[0], 1))
+    points_homogeneous = np.hstack([contour_points, ones])
+    rotated_points = M.dot(points_homogeneous.T).T
+    rotated_contour = rotated_points[:, :2].reshape(-1, 1, 2).astype(np.int32)
+    
+    # Recompute contours on the rotated thresholded image to avoid border artifacts
+    contours, _ = cv.findContours(rotated_thresh, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    
+    # Filter contours to exclude those touching the image borders
+    border_margin = 5
+    valid_contours = []
+    for c in contours:
+        x, y, w, h = cv.boundingRect(c)
+        if (x > border_margin and y > border_margin and 
+            x + w < new_w - border_margin and y + h < new_h - border_margin):
+            valid_contours.append(c)
+    
+    if not valid_contours:
+        # Fallback to the transformed contour if no valid contours are found
+        return rotated_image, rotated_contour, rotated_gray, rotated_thresh
+    
+    # Select the contour closest to the transformed contour's centroid
+    if len(rotated_contour) > 0:
+        M = cv.moments(rotated_contour)
+        if M["m00"] != 0:
+            cx = int(M["m10"] / M["m00"])
+            cy = int(M["m01"] / M["m00"])
+        else:
+            cx, cy = new_w // 2, new_h // 2
+    else:
+        cx, cy = new_w // 2, new_h // 2
+    
+    best_contour = None
+    min_dist = float('inf')
+    for c in valid_contours:
+        M = cv.moments(c)
+        if M["m00"] != 0:
+            c_cx = int(M["m10"] / M["m00"])
+            c_cy = int(M["m01"] / M["m00"])
+            dist = np.sqrt((c_cx - cx)**2 + (c_cy - cy)**2)
+            if dist < min_dist:
+                min_dist = dist
+                best_contour = c
+    
+    if best_contour is None:
+        # Fallback to the transformed contour
+        return rotated_image, rotated_contour, rotated_gray, rotated_thresh
+    
+    return rotated_image, best_contour, rotated_gray, rotated_thresh
+
+# Function to extract generalized features
+def extract_generalized_features(contour, image):
+    """
+    Extract generalized features including those required by classify_usb_general.
+    
+    Args:
+        contour: The contour to analyze
+        image: Grayscale image
+        
+    Returns:
+        Dictionary of extracted features
+    """
+    # Start with features from extract_features_from_contours
+    features = extract_features_from_contours(contour, image.shape)
+    
+    # Add additional features required by classify_usb_general
+    # Rectangle similarity (extent is a good proxy)
+    features['rect_similarity'] = features['extent']
+    
+    # Ellipse similarity (based on ellipse_ratio and circularity)
+    if len(contour) >= 5:
+        ellipse = cv.fitEllipse(contour)
+        major_axis, minor_axis = max(ellipse[1]), min(ellipse[1])
+        ellipse_area = np.pi * major_axis * minor_axis / 4
+        contour_area = features['area']
+        features['ellipse_similarity'] = contour_area / ellipse_area if ellipse_area > 0 else 0
+        features['ellipse_similarity'] = min(features['ellipse_similarity'], 1.0)
+    else:
+        features['ellipse_similarity'] = 0.0
+    
+    # Trapezoid score (approximate by checking if contour approximates a trapezoid)
+    epsilon = 0.02 * features['perimeter']
+    approx = cv.approxPolyDP(contour, epsilon, True)
+    if len(approx) == 4:  # Quadrilateral
+        # Check if opposite sides are parallel (indicative of trapezoid)
+        points = approx.reshape(-1, 2)
+        # Calculate vectors for opposite sides
+        side1 = points[1] - points[0]
+        side3 = points[3] - points[2]
+        # Compute dot product to check parallelism
+        dot_product = np.dot(side1, side3)
+        norm1 = np.linalg.norm(side1)
+        norm3 = np.linalg.norm(side3)
+        if norm1 * norm3 != 0:
+            cos_angle = dot_product / (norm1 * norm3)
+            trapezoid_score = 1.0 - abs(cos_angle)  # Closer to 0 means more parallel
+            features['trapezoid_score'] = min(trapezoid_score, 1.0)
+        else:
+            features['trapezoid_score'] = 0.0
+    else:
+        features['trapezoid_score'] = 0.0
+    
+    # Convexity (ratio of perimeter to convex hull perimeter)
+    hull = cv.convexHull(contour)
+    hull_perimeter = cv.arcLength(hull, True)
+    features['convexity'] = features['perimeter'] / hull_perimeter if hull_perimeter > 0 else 1.0
+    
+    return features
+
+# Refined templates with more precise ranges
+USB_TEMPLATES = {
+    'Type-A': {
+        # Core Type-A features
+        'aspect_ratio': (1.5, 3.0),
+        'circularity': (0.01, 0.35),
+        'solidity': (0.7, 1.0),
+        'rect_similarity': (0.7, 1.0),
+        'ellipse_similarity': (0.0, 0.9),
+        'convexity': (1.0, 2.2),
+    },
+    'Type-C': {
+        'aspect_ratio': (2.5, 5.0),
+        'circularity': (0.08, 0.9),
+        'solidity': (0.2, 0.95),
+        'rect_similarity': (0.0, 0.8),
+        'ellipse_similarity': (0.9, 1.0),
+        'ellipse_ratio': (0.35, 0.45),
+    },
+    'Mini': {
+        'aspect_ratio': (1.8, 2.4),           
+        'circularity': (0.15, 0.35),         
+        'solidity': (0.75, 0.95),             
+        'rect_similarity': (0.6, 0.85),      
+        'ellipse_similarity': (0.3, 0.6),     
+        'trapezoid_score': (0.7, 0.95),       
+        'convexity': (1.5, 2.2),             
+        'vertical_symmetry': (0.6, 0.85),     
+        'horizontal_symmetry': (0.5, 0.75),   
+    },
+     'Micro-B': {
+        'aspect_ratio': (1.5, 2.0),
+        'rect_similarity': (0.75, 0.85),
+        'circularity': (0.25, 0.40),
+        'solidity': (0.80, 0.90),
+        'convexity': (1.2, 1.5),
+        'horizontal_symmetry': (0.75, 0.85),
+        'vertical_symmetry': (0.70, 0.85)
+    },
+    'RJ45': {
+        # Core RJ45 features
+        'aspect_ratio': (1.0, 1.5),
+        'circularity': (0.2, 0.6),
+        'solidity': (0.85, 1.0),
+        'rect_similarity': (0.85, 1.0),
+        'ellipse_similarity': (0.4, 0.7),
+    }
+}
+
+# Improved classification function
+def classify_usb_general(features):
+    if not features:
+        return "Unknown", 0, {"Unknown": 0}
+    
+    # Fix any out-of-bounds values in features
+    for key in ['rect_similarity', 'ellipse_similarity', 'vertical_symmetry', 'horizontal_symmetry']:
+        if key in features and features[key] > 1.0:
+            features[key] = min(features[key], 1.0)
+    
+    # Extract key features
+    rect_similarity = min(features.get('rect_similarity', 0), 1.0)
+    ellipse_similarity = min(features.get('ellipse_similarity', 0), 1.0)
+    circularity = features.get('circularity', 0)
+    aspect_ratio = features.get('aspect_ratio', 0)
+    trapezoid_score = features.get('trapezoid_score', 0)
+    solidity = features.get('solidity', 0)
+    convexity = features.get('convexity', 1.0)
+    corners = features.get('corners', 0)
+    horizontal_symmetry = features.get('horizontal_symmetry', 0)
+    vertical_symmetry = features.get('vertical_symmetry', 0)
+    ellipse_ratio = features.get('ellipse_ratio', 0)
+    
+    # Initialize type scores using hard-coded classification rules
+    type_scores = {
+        'Type-A': 0.0,
+        'Type-B': 0.0,
+        'Type-C': 0.0,
+        'Mini': 0.0,
+        'Micro_B': 0.0,
+        'RJ45': 0.0
+    }
+    mini_score = 0.0
+    
+    if 2.2 <= aspect_ratio <= 2.6:
+        mini_score += 0.35
+    elif 2.6 < aspect_ratio <= 2.9: 
+        mini_score += 0.25
+    elif 1.8 <= aspect_ratio < 2.2:
+        mini_score += 0.20
+    
+    if 0.85 <= solidity <= 1.0:
+        mini_score += 0.30
+    elif 0.75 <= solidity < 0.85:
+        mini_score += 0.20
+  
+    if 0.20 <= circularity <= 0.60:
+        mini_score += 0.25
+    elif 0.15 <= circularity < 0.20 or 0.60 < circularity <= 0.70:
+        mini_score += 0.15
+    
+    if 0.85 <= horizontal_symmetry <= 0.90:
+        mini_score += 0.25
+    elif 0.80 <= horizontal_symmetry < 0.85 or 0.90 < horizontal_symmetry <= 0.95:
+        mini_score += 0.15
+    
+    # Mini examples have specific convexity range
+    if 1.5 <= convexity <= 1.8:
+        mini_score += 0.25
+    elif 1.3 <= convexity < 1.5 or 1.8 < convexity <= 2.0:
+        mini_score += 0.15
+    
+    # Penalize Type-C-like features
+    if ellipse_similarity >= 0.9 and 0.3 <= ellipse_ratio <= 0.35 and vertical_symmetry >= 0.97 and horizontal_symmetry >= 0.97:
+        mini_score -= 0.40  # Strong penalty for Type-C-like features
+    
+    if (2.8 <= aspect_ratio <= 2.9 and 
+        0.85 <= solidity <= 0.95 and 
+        0.20 <= circularity <= 0.25 and 
+        1.6 <= convexity <= 1.8):
+        mini_score += 0.40  # Strong bonus for your specific Mini example
+    
+    # Set the Mini score
+    type_scores['Mini'] = max(0, mini_score)
+
+    # Type-C is characterized by oval shape, high aspect ratio, specific ellipse ratio
+    if aspect_ratio >= 2.5:
+        # Type-C base score components
+        type_c_score = 0.0
+        
+        # Strong oval shape
+        if ellipse_similarity >= 0.9:
+            type_c_score += 0.35
+        elif ellipse_similarity >= 0.85:
+            type_c_score += 0.25
+        elif ellipse_similarity >= 0.8:
+            type_c_score += 0.15
+        
+        ellipse_ratio = features.get('ellipse_ratio', 0)
+        if 0.35 <= ellipse_ratio <= 0.45:
+            type_c_score += 0.25
+        elif 0.3 <= ellipse_ratio <= 0.5:
+            type_c_score += 0.15
+        
+        if 2.7 <= aspect_ratio <= 3.5:
+            type_c_score += 0.20
+        elif aspect_ratio > 3.5:
+            type_c_score += 0.10
+        elif 2.5 <= aspect_ratio < 2.7:
+            type_c_score += 0.05
+        
+        # Low solidity is distinctive for some Type-C examples
+        if solidity <= 0.3 and ellipse_similarity >= 0.85:
+            type_c_score += 0.20
+        
+        # Type-C can have low circularity in some cases
+        if circularity <= 0.15 and 2.7 <= aspect_ratio <= 4.0 and 0.35 <= ellipse_ratio <= 0.45:
+            type_c_score += 0.15
+        
+        if (2.7 <= aspect_ratio <= 2.9 and 
+            0.75 <= solidity <= 0.85 and 
+            0.10 <= circularity <= 0.15 and
+            0.40 <= ellipse_ratio <= 0.42 and
+            horizontal_symmetry <= 0.80):
+            type_c_score += 0.40  
+        
+        # Penalize Mini-like features
+        if 1.5 <= convexity <= 1.8 and 0.85 <= solidity <= 0.95 and 0.20 <= circularity <= 0.25:
+            type_c_score -= 0.30  # Strong penalty for Mini-like features
+        
+        type_scores['Type-C'] = max(0, type_c_score)
+        
+    # Micro-B is characterized by specific features
+    micro_b_score = 0.0
+    
+    if 4.0 <= aspect_ratio <= 5.0:
+        micro_b_score += 0.35
+    elif 3.5 <= aspect_ratio < 4.0 or 5.0 < aspect_ratio <= 5.5:
+        micro_b_score += 0.20
+    
+    if 0.85 <= solidity <= 0.95:
+        micro_b_score += 0.30
+    elif 0.80 <= solidity < 0.85 or 0.95 < solidity <= 1.0:
+        micro_b_score += 0.15
+    
+    if 0.15 <= circularity <= 0.25:
+        micro_b_score += 0.25
+    elif 0.10 <= circularity < 0.15 or 0.25 < circularity <= 0.30:
+        micro_b_score += 0.15
+    
+    if 0.94 <= vertical_symmetry <= 1.0:
+        micro_b_score += 0.15
+    if 0.97 <= horizontal_symmetry <= 1.0:
+        micro_b_score += 0.15
+    
+    # Micro-B has specific ellipse ratio
+    if 0.20 <= features.get('ellipse_ratio', 0) <= 0.25:
+        micro_b_score += 0.25
+    elif 0.15 <= features.get('ellipse_ratio', 0) < 0.20 or 0.25 < features.get('ellipse_ratio', 0) <= 0.30:
+        micro_b_score += 0.15
+    
+    if 1.5 <= convexity <= 1.7:
+        micro_b_score += 0.25
+    elif 1.3 <= convexity < 1.5 or 1.7 < convexity <= 1.9:
+        micro_b_score += 0.15
+    
+    if 0.80 <= rect_similarity <= 0.90:
+        micro_b_score += 0.20
+    elif 0.75 <= rect_similarity < 0.80 or 0.90 < rect_similarity <= 0.95:
+        micro_b_score += 0.10
+
+   # Micro-B has very high ellipse_similarity
+    if 0.95 <= ellipse_similarity <= 1.0:
+        micro_b_score += 0.20
+    elif 0.90 <= ellipse_similarity < 0.95:
+        micro_b_score += 0.10
+        
+    if (4.0 <= aspect_ratio <= 5.0 and 0.85 <= solidity <= 0.95 and 1.5 <= convexity <= 1.7):
+        micro_b_score += 0.20
+    
+    if (0.15 <= circularity <= 0.25 and 0.20 <= features.get('ellipse_ratio', 0) <= 0.25):
+        micro_b_score += 0.15
+    
+    if (vertical_symmetry >= 0.94 and horizontal_symmetry >= 0.97):
+        micro_b_score += 0.10
+    
+    type_scores['Micro-B'] = max(0, micro_b_score)
+    
+    # Prevent overlap with Mini type
+    if micro_b_score > 0.6 and type_scores['Mini'] > 0.6:
+        # If both score high, use aspect ratio as a tiebreaker
+        if aspect_ratio >= 4.0:
+            type_scores['Mini'] *= 0.6  # Reduce Mini score
+        else:
+            type_scores['Micro-B'] *= 0.6  # Reduce Micro-B score
+    
+    # Prevent overlap with Type-C
+    if micro_b_score > 0.6 and type_scores['Type-C'] > 0.6:
+        # If both score high, use symmetry and solidity as tiebreakers
+        if vertical_symmetry >= 0.94 and horizontal_symmetry >= 0.97 and solidity >= 0.85:
+            type_scores['Type-C'] *= 0.6  # Reduce Type-C score
+        else:
+            type_scores['Micro-B'] *= 0.6  # Reduce Micro-B score
+
+
+    # Type-A is characterized by rectangular shape, moderate aspect ratio
+    type_a_score = 0.0
+    
+    if rect_similarity >= 0.85:
+        type_a_score += 0.40
+    elif rect_similarity >= 0.75:
+        type_a_score += 0.30
+    elif rect_similarity >= 0.7:
+        type_a_score += 0.20
+    
+    if circularity <= 0.15:
+        type_a_score += 0.25
+    elif circularity <= 0.25:
+        type_a_score += 0.15
+    elif circularity <= 0.35:
+        type_a_score += 0.05
+    
+    if rect_similarity >= 0.75 and ellipse_similarity <= 0.8:
+        type_a_score += 0.15
+    
+    if 2.0 <= aspect_ratio <= 2.7:
+        type_a_score += 0.15
+    elif 1.5 <= aspect_ratio < 2.0 or 2.7 < aspect_ratio <= 3.0:
+        type_a_score += 0.05
+    
+    # Penalize Type-C-like features
+    if (2.7 <= aspect_ratio <= 2.9 and 
+        0.75 <= solidity <= 0.85 and 
+        0.10 <= circularity <= 0.15 and
+        0.40 <= ellipse_ratio <= 0.42 and
+        horizontal_symmetry <= 0.80):
+        type_a_score -= 0.30  # Strong penalty for Type-C-like features
+    
+    # Set the Type-A score
+    type_scores['Type-A'] = max(0, type_a_score)
+
+    # RJ45 is characterized by nearly square shape
+    if 1.0 <= aspect_ratio <= 1.5:
+        # RJ45 base score components
+        rj45_score = 0.0
+        
+        # Strong rectangular shape
+        if rect_similarity >= 0.85:
+            rj45_score += 0.40
+        elif rect_similarity >= 0.75:
+            rj45_score += 0.25
+        
+        # Nearly square aspect ratio
+        if 1.1 <= aspect_ratio <= 1.4:
+            rj45_score += 0.40
+        else:
+            rj45_score += 0.20
+        
+        # Set the RJ45 score
+        type_scores['RJ45'] = rj45_score
+   
+      # ===== Calculate template match scores =====
+    template_scores = {}
+    
+    for usb_type, template in USB_TEMPLATES.items():
+        matches = 0
+        total_features = 0
+        match_quality = 0
+        
+        for feature_name, (min_val, max_val) in template.items():
+            if feature_name in features:
+                total_features += 1
+                feature_val = features[feature_name]
+                
+                # Check if feature is within range
+                if min_val <= feature_val <= max_val:
+                    matches += 1
+                    
+                    # Calculate position within the valid range (0-1)
+                    range_size = max_val - min_val
+                    if range_size > 0:
+                        center = (min_val + max_val) / 2
+                        distance_from_center = abs(feature_val - center)
+                        max_distance = (max_val - min_val) / 2
+                        quality = 1.0 - (distance_from_center / max_distance)
+                        match_quality += quality
+        
+        # Calculate template match score
+        if total_features > 0:
+            match_ratio = matches / total_features
+            avg_quality = match_quality / total_features
+            template_scores[usb_type] = 0.6 * match_ratio + 0.4 * avg_quality
+        else:
+            template_scores[usb_type] = 0
+    
+    if vertical_symmetry >= 0.8 and horizontal_symmetry >= 0.8 and 0.9 <= aspect_ratio <= 1.2:
+        type_scores['Type-B'] = max(type_scores['Type-B'], 0.80)
+        template_scores['Type-B'] = max(template_scores['Type-B'], 0.75)
+        for other_type in ['Type-A', 'Type-C', 'Mini', 'RJ45']:
+            type_scores[other_type] *= 0.6
+            template_scores[other_type] *= 0.6
+    
+    if 1.8 <= aspect_ratio <= 2.4 and 0.6 <= horizontal_symmetry <= 0.75:
+        type_scores['Mini'] = max(type_scores['Mini'], 0.80)
+        template_scores['Mini'] = max(template_scores['Mini'], 0.75)
+        for other_type in ['Type-A', 'Type-B', 'Type-C', 'RJ45']:
+            type_scores[other_type] *= 0.5
+            template_scores[other_type] *= 0.5
+
+    if (1.8 <= aspect_ratio <= 2.4 and 
+        trapezoid_score >= 0.8 and 
+        0.6 <= horizontal_symmetry <= 0.75 and 
+        1.5 <= convexity <= 2.2):
+        type_scores['Mini'] = max(type_scores['Mini'], 0.85)
+        template_scores['Mini'] = max(template_scores['Mini'], 0.80)
+        for other_type in ['Type-A', 'Type-B', 'Type-C', 'RJ45']:
+            type_scores[other_type] *= 0.4
+            template_scores[other_type] *= 0.4
+
+    if 1.5 <= aspect_ratio <= 2.0 and 0.75 <= horizontal_symmetry <= 0.85:
+        type_scores['Micro-B'] = max(type_scores['Micro-B'], 0.80)
+        template_scores['Micro-B'] = max(template_scores.get('Micro-B', 0), 0.75)
+        for other_type in ['Type-A', 'Type-B', 'Type-C', 'Mini', 'RJ45']:
+            type_scores[other_type] *= 0.5
+            template_scores[other_type] *= 0.5
+    
+    # ===== Combine scores =====
+    final_scores = {}
+    
+    for usb_type in type_scores:
+        # Weighted average: 60% type-specific rules, 40% template matching
+        final_scores[usb_type] = 0.6 * type_scores[usb_type] + 0.4 * template_scores.get(usb_type, 0)
+    
+    # ===== Final adjustments =====
+    max_score = max(final_scores.values()) if final_scores else 0
+    if max_score > 0.80:
+        scaling_factor = 0.80 / max_score
+        for usb_type in final_scores:
+            if final_scores[usb_type] == max_score:
+                final_scores[usb_type] = 0.80
+            else:
+                final_scores[usb_type] = 0.20 + (final_scores[usb_type] * scaling_factor * 0.60)
+    
+    # Find the best match
+    best_match = max(final_scores.items(), key=lambda x: x[1]) if final_scores else ("Unknown", 0)
+    usb_type = best_match[0]
+    confidence = best_match[1]
+    
+    return usb_type, confidence, final_scores
+
+def detect_sinusoidal_noise(image, threshold_factor=3, min_peaks=150, show_spectrum=False):
+    if len(image.shape) == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    else:
+        gray = image
+
+    f = np.fft.fft2(gray)
+    fshift = np.fft.fftshift(f)
+
+    # Compute magnitude spectrum and take logarithm
+    magnitude_spectrum = np.abs(fshift)
+    log_magnitude = np.log(magnitude_spectrum + 1)
+
+    mean_val = np.mean(log_magnitude)
+    std_dev = np.std(log_magnitude)
+    threshold = mean_val + threshold_factor * std_dev
+
+    # Detect local peaks with focus on vertical patterns
+    peaks = []
+    rows, cols = log_magnitude.shape
+    center_row, center_col = rows // 2, cols // 2
+    
+    for i in range(1, rows - 1):
+        for j in range(1, cols - 1):
+            if log_magnitude[i, j] > threshold:
+                # Check if it's a local maximum
+                neighbors = log_magnitude[i-1:i+2, j-1:j+2]
+                if log_magnitude[i, j] == np.max(neighbors):
+                    # Calculate distance from center
+                    y_dist = abs(i - center_row)
+                    x_dist = abs(j - center_col)
+                    
+                    # Give preference to peaks that indicate vertical patterns
+                    # (peaks along the horizontal axis in frequency domain)
+                    if x_dist > y_dist:
+                        peaks.append((i, j))
+
+    if show_spectrum:
+        plt.figure(figsize=(12, 4))
+        
+        # Original image
+        plt.subplot(121)
+        plt.imshow(gray, cmap='gray')
+        plt.title("Original Image")
+        plt.axis('off')
+        
+        # Spectrum with peaks
+        plt.subplot(122)
+        plt.imshow(log_magnitude, cmap='gray')
+        plt.title(f"Log Magnitude Spectrum\n{len(peaks)} peaks detected")
+        if peaks:
+            peak_coords = np.array(peaks)
+            plt.plot(peak_coords[:, 1], peak_coords[:, 0], 'r.', markersize=3)
+        plt.axis('off')
+        plt.colorbar()
+        plt.show()
+
+    print(f"Detected {len(peaks)} vertical pattern peaks above threshold.")
+    return len(peaks) >= min_peaks
+
+def remove_sinusoidal(image, show_result=True):
+    # Store original image for comparison
+    original_image = image.copy()
+    
+    # Apply initial contrast enhancement to make features more distinct
+    clahe_pre = cv.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+    enhanced_pre = clahe_pre.apply(image)
+    
+    # Perform FFT
+    f = np.fft.fft2(enhanced_pre)
+    fshift = np.fft.fftshift(f)
+    
+    # Get magnitude spectrum
+    magnitude_spectrum = np.abs(fshift)
+    log_magnitude = np.log(magnitude_spectrum + 1)
+    
+    # Calculate threshold for peak detection
+    mean_val = np.mean(log_magnitude)
+    std_dev = np.std(log_magnitude)
+    threshold = mean_val + 2.5 * std_dev
+    
+    # Create mask for filtering
+    rows, cols = image.shape
+    crow, ccol = rows // 2, cols // 2
+    mask = np.ones((rows, cols), np.uint8)
+    
+    # Find peaks in the frequency spectrum, focusing on vertical patterns
+    peaks = []
+    for i in range(1, rows-1):
+        for j in range(1, cols-1):
+            if log_magnitude[i, j] > threshold:
+                # Check if it's a local maximum
+                neighborhood = log_magnitude[i-1:i+2, j-1:j+2]
+                if log_magnitude[i, j] == np.max(neighborhood):
+                    # Calculate distance from center
+                    y_dist = abs(i - crow)
+                    x_dist = abs(j - ccol)
+                    
+                    # Focus on peaks that represent vertical patterns
+                    if x_dist > y_dist:
+                        peaks.append((i, j))
+    
+    # Apply selective notch filters at detected peaks
+    for peak_i, peak_j in peaks:
+        # Calculate distance from center
+        dist_from_center = np.sqrt((peak_i - crow)*2 + (peak_j - ccol)*2)
+        if dist_from_center > 5:  # Ignore very low frequencies
+            # Create narrower notch filter around each peak
+            for i in range(max(0, peak_i-2), min(rows, peak_i+3)):
+                for j in range(max(0, peak_j-2), min(cols, peak_j+3)):
+                    # Gradual attenuation instead of complete removal
+                    dist_from_peak = np.sqrt((i - peak_i)*2 + (j - peak_j)*2)
+                    attenuation = 1 - np.exp(-dist_from_peak**2 / 2)
+                    mask[i, j] = min(mask[i, j], attenuation)
+            
+            # Also filter the symmetric point
+            sym_i = rows - peak_i
+            sym_j = cols - peak_j
+            if 0 <= sym_i < rows and 0 <= sym_j < cols:
+                for i in range(max(0, sym_i-2), min(rows, sym_i+3)):
+                    for j in range(max(0, sym_j-2), min(cols, sym_j+3)):
+                        dist_from_peak = np.sqrt((i - sym_i)*2 + (j - sym_j)*2)
+                        attenuation = 1 - np.exp(-dist_from_peak**2 / 2)
+                        mask[i, j] = min(mask[i, j], attenuation)
+    
+    # Apply the mask
+    fshift_filtered = fshift * mask
+    
+    # Inverse FFT
+    f_ishift = np.fft.ifftshift(fshift_filtered)
+    img_back = np.fft.ifft2(f_ishift)
+    img_back = np.abs(img_back)
+    
+    # Normalize and convert to uint8
+    img_back = ((img_back - np.min(img_back)) / (np.max(img_back) - np.min(img_back)) * 255).astype(np.uint8)
+    
+    # Apply multi-stage contrast enhancement
+    # 1. CLAHE with moderate clip limit
+    clahe1 = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    enhanced1 = clahe1.apply(img_back)
+    
+    # 2. Adjust gamma
+    gamma = 1.2
+    gamma_corrected = np.power(enhanced1/255.0, gamma) * 255.0
+    gamma_corrected = gamma_corrected.astype(np.uint8)
+    
+    # 3. Final CLAHE with lower clip limit for fine detail
+    clahe2 = cv.createCLAHE(clipLimit=1.5, tileGridSize=(4,4))
+    final_image = clahe2.apply(gamma_corrected)
+    
+    # 4. Blend with original to preserve some original characteristics
+    alpha = 0.85  # Weight for the processed image
+    beta = 1 - alpha  # Weight for the original image
+    blended = cv.addWeighted(final_image, alpha, original_image, beta, 0)
+    
+    # 5. Sharpen the result
+    kernel = np.array([[-1,-1,-1],
+                      [-1, 9,-1],
+                      [-1,-1,-1]])
+    sharpened = cv.filter2D(blended, -1, kernel)
+    
+    if show_result:
+        # Create a figure with 4 subplots
+        plt.figure(figsize=(15, 10))
+        
+        # Original Image
+        plt.subplot(221)
+        plt.imshow(original_image, cmap='gray')
+        plt.title('Original Image')
+        plt.axis('off')
+        
+        # FFT Spectrum with detected peaks
+        plt.subplot(222)
+        plt.imshow(log_magnitude, cmap='gray')
+        plt.title(f'FFT Spectrum with {len(peaks)} Peaks')
+        if peaks:
+            peak_coords = np.array(peaks)
+            plt.plot(peak_coords[:, 1], peak_coords[:, 0], 'r.', markersize=3)
+        plt.axis('off')
+        
+        # Processed Image
+        plt.subplot(223)
+        plt.imshow(sharpened, cmap='gray')
+        plt.title('After Wave Removal')
+        plt.axis('off')
+        
+        # Side-by-side Comparison
+        plt.subplot(224)
+        comparison = np.hstack((original_image, sharpened))
+        plt.imshow(comparison, cmap='gray')
+        plt.title('Before vs After')
+        plt.axis('off')
+        
+        plt.tight_layout()
+        plt.show()
+        
+        # Save the comparison image
+        plt.imsave('sinusoidal_removal_comparison.png', comparison, cmap='gray')
+        print("Comparison image saved as 'sinusoidal_removal_comparison.png'")
+    
+    return sharpened
+    
+    def show_image(img, title, cmap='gray'): 
+        plt.figure(figsize=(6, 4)) 
+        plt.imshow(img, cmap=cmap) 
+        plt.title(title) 
+        plt.axis('off') 
+        plt.show() 
+    
+    def load_and_resize_image(image_path, max_dim=400): 
+        # Load image 
+        image = cv.imread(image_path) 
+        if image is None: 
+            raise Exception(f"Could not load image from {image_path}") 
+        
+        # Resize for consistent processing 
+        h, w = image.shape[:2] 
+        if max(h, w) > max_dim: 
+            scale = max_dim / max(h, w) 
+            image = cv.resize(image, (int(w * scale), int(h * scale))) 
+        
+        return image
+        # Resize for consistent processing 
+        h, w = image.shape[:2] 
+        if max(h, w) > max_dim: 
+            scale = max_dim / max(h, w) 
+            image = cv.resize(image, (int(w * scale), int(h * scale))) 
+        
+        return image 
+    
+    def preprocess_image(image): 
+        gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY) 
+        blurred = cv.GaussianBlur(gray, (5, 5), 0) 
+            
+        # Apply adaptive thresholding 
+        thresh = cv.adaptiveThreshold( 
+            blurred, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, 
+            cv.THRESH_BINARY_INV, 11, 2
+        ) 
+            
+        return gray, blurred, thresh 
+    
+    # Main function that processes a specific hard-coded image 
+        
+    def find_usb_contour(thresh, gray): 
+        # Find contours 
+        contours, _ = cv.findContours(thresh, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE) 
+            
+        if not contours: 
+            print("No contours found in the image.") 
+            return None 
+            
+        # Find the most likely USB contour 
+        usb_contours = [] 
+            
+        for contour in contours: 
+            area = cv.contourArea(contour) 
+            if area < 100:  # Skip very small contours 
+                continue 
+                    
+            # Get basic measurements 
+            x, y, w, h = cv.boundingRect(contour) 
+            aspect_ratio = w / h if h > 0 else 0 
+                
+            # Check if it could be a USB connector (typical aspect ratios) 
+            if 1.0 <= aspect_ratio <= 5.0: 
+                # Calculate distance from image center 
+                center_x, center_y = gray.shape[1] // 2, gray.shape[0] // 2 
+                m = cv.moments(contour) 
+                if m["m00"] != 0: 
+                    cx = int(m["m10"] / m["m00"]) 
+                    cy = int(m["m01"] / m["m00"]) 
+                    dist = np.sqrt((cx - center_x)**2 + (cy - center_y)**2) 
+                else: 
+                    dist = float('inf') 
+                    
+                usb_contours.append((contour, area, dist)) 
+        
+        if not usb_contours: 
+            print("No suitable USB contours found in the image.") 
+            return None 
+        
+        # Select the contour with largest area close to center 
+        usb_contours.sort(key=lambda x: (x[2], -x[1]))  # Sort by distance, then negative area 
+        best_contour = usb_contours[0][0] 
+        
+        return best_contour
+
+def main():
+    image_path = "/kaggle/input/usb-type-again/Extra_images/micro_b_2.jpg" 
+    
+    try:
+        # Load image
+        image = cv.imread(image_path)
+        if image is None:
+            raise Exception(f"Could not load image from {image_path}")
+        
+        # Resize for consistent processing
+        max_dim = 400
+        h, w = image.shape[:2]
+        if max(h, w) > max_dim:
+            scale = max_dim / max(h, w)
+            image = cv.resize(image, (int(w * scale), int(h * scale)))
+        
+        # Convert to grayscale
+        gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
+
+        # Store original grayscale image (optional, for visualization or fallback)
+        original_gray = gray.copy()
+
+        # --- Enhanced Feature Extraction Pipeline ---
+        # 1. Enhance image for better feature extraction
+        enhanced_gray = enhance_image_for_feature_extraction(gray)
+        
+        # 2. Extract Canny edges
+        edges = extract_canny_edges(enhanced_gray)
+        
+        # 3. Extract Harris corners
+        corner_mask, corner_coords = extract_harris_corners(enhanced_gray)
+        
+        # 4. Apply morphological operations to clean features
+        cleaned_edges = apply_morphological_operations(edges, operation='clean')
+        enhanced_edges = apply_morphological_operations(cleaned_edges, operation='enhance')
+        
+        # 5. Extract geometric features from edges and corners
+        geometric_features = extract_geometric_features(enhanced_edges, corner_mask)
+
+        # --- Sinusoidal Noise Detection ---
+        has_noise = detect_sinusoidal_noise(gray, threshold_factor=3, min_peaks=150, show_spectrum=True)
+
+        # --- Conditional Noise Removal ---
+        if has_noise:
+            print("Sinusoidal noise detected. Applying noise removal...")
+            processed_image = remove_sinusoidal(gray, show_result=True)
+            print("Noise removal complete.")
+        else:
+            print("No significant sinusoidal noise detected. Proceeding with original image.")
+            processed_image = gray
+        
+        # Apply preprocessing
+        blurred = cv.GaussianBlur(gray, (5, 5), 0)
+        
+        # Apply adaptive thresholding
+        thresh = cv.adaptiveThreshold(
+            blurred, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, 
+            cv.THRESH_BINARY_INV, 11, 2
+        )
+        
+        # Find contours
+        contours, _ = cv.findContours(thresh, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+        
+        if not contours:
+            print("No contours found in the image.")
+            return
+        
+        # Find the most likely USB contour
+        usb_contours = []
+        
+        for contour in contours:
+            area = cv.contourArea(contour)
+            if area < 100:  # Skip very small contours
+                continue
+                
+            # Get basic measurements
+            x, y, w, h = cv.boundingRect(contour)
+            aspect_ratio = w / h if h > 0 else 0
+            
+            # Check if it could be a USB connector (typical aspect ratios)
+            if 1.0 <= aspect_ratio <= 5.0:
+                # Calculate distance from image center
+                center_x, center_y = gray.shape[1] // 2, gray.shape[0] // 2
+                m = cv.moments(contour)
+                if m["m00"] != 0:
+                    cx = int(m["m10"] / m["m00"])
+                    cy = int(m["m01"] / m["m00"])
+                    dist = np.sqrt((cx - center_x)**2 + (cy - center_y)**2)
+                else:
+                    dist = float('inf')
+                
+                usb_contours.append((contour, area, dist))
+        
+        if not usb_contours:
+            print("No suitable USB contours found in the image.")
+            return
+        
+        # Select the contour with largest area close to center
+        usb_contours.sort(key=lambda x: (x[2], -x[1]))  # Sort by distance, then negative area
+        best_contour = usb_contours[0][0]
+        
+        # Correct USB orientation
+        image, best_contour, gray, thresh = correct_usb_orientation(image, best_contour, gray, thresh)
+        
+        # Create visualization images
+        # Original image with contour
+        result_image = image.copy()
+        cv.drawContours(result_image, [best_contour], 0, (0, 255, 0), 2)
+        
+        # Thresholded image with contour
+        thresh_color = cv.cvtColor(thresh, cv.COLOR_GRAY2BGR)
+        cv.drawContours(thresh_color, [best_contour], 0, (0, 255, 0), 2)
+        
+        # Extract generalized features
+        features = extract_generalized_features(best_contour, gray)
+        
+        # Merge geometric features with generalized features
+        features.update(geometric_features)
+    
+        print("Extracted Features:")
+        for feature, value in features.items():
+            print(f"  {feature}: {value}")
+        
+        # Classify USB type
+        usb_type, confidence, scores = classify_usb_general(features)
+        
+        # Add classification result to image
+        cv.putText(
+            result_image, 
+            f"Type: {usb_type}", 
+            (10, 30), 
+            cv.FONT_HERSHEY_SIMPLEX, 
+            1.0, 
+            (0, 255, 0), 
+            2
+        )
+    
+        cv.putText(
+            result_image, 
+            f"Confidence: {confidence:.2f}", 
+            (10, 60), 
+            cv.FONT_HERSHEY_SIMPLEX, 
+            0.8, 
+            (0, 255, 0), 
+            2
+        )
+    
+        # Add scores for each type on the right side
+        y_pos = 30
+        for usb_type_name, score in sorted(scores.items(), key=lambda x: x[1], reverse=True):
+            cv.putText(
+                result_image, 
+                f"{usb_type_name}: {score:.2f}", 
+                (result_image.shape[1] - 150, y_pos), 
+                cv.FONT_HERSHEY_SIMPLEX, 
+                0.6, 
+                (255, 0, 0), 
+                2
+            )
+            y_pos += 25
+        
+        # Display results
+        print(f"\nClassification Results:")
+        print(f"USB Type: {usb_type}")
+        print(f"Confidence: {confidence:.2f}")
+        print("\nScores by Type:")
+        for usb_type_name, score in sorted(scores.items(), key=lambda x: x[1], reverse=True):
+            print(f"  {usb_type_name}: {score:.2f}")
+        
+        # Create a figure with four subplots
+        plt.figure(figsize=(15, 10))
+        
+        # Plot original image with contour
+        plt.subplot(2, 2, 1)
+        plt.imshow(cv.cvtColor(result_image, cv.COLOR_BGR2RGB))
+        plt.title(f"Original Image with Contour\nType: {usb_type} ({confidence:.2f})")
+        plt.axis('off')
+        
+        # Plot thresholded image with contour
+        plt.subplot(2, 2, 2)
+        plt.imshow(cv.cvtColor(thresh_color, cv.COLOR_BGR2RGB))
+        plt.title("Thresholded Image with Contour")
+        plt.axis('off')
+        
+        # Plot enhanced edges
+        plt.subplot(2, 2, 3)
+        plt.imshow(enhanced_edges, cmap='gray')
+        plt.title("Enhanced Edges")
+        plt.axis('off')
+        
+        # Plot corner detection
+        plt.subplot(2, 2, 4)
+        plt.imshow(corner_mask, cmap='gray')
+        plt.title("Detected Corners")
+        plt.axis('off')
+        
+        # Adjust layout
+        plt.tight_layout()
+        
+        # Save the plot
+        plt.savefig('usb_classification_result.png', dpi=300, bbox_inches='tight')
+        
+        # Show the plot
+        plt.show()
+        
+        # Close the plot
+        plt.close()
+        
+    except Exception as e:
+        print(f"Error processing image: {e}")
+
+if __name__ == "__main__":
+    main()
+
