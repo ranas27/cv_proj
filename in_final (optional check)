@@ -15,7 +15,7 @@ def show_image(img, title, cmap='gray'):
 
 
 def enhance_image_for_feature_extraction(gray):
-    """Apply advanced preprocessing to enhance image for feature extraction"""
+   
     clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
     contrast_enhanced = clahe.apply(gray)
     bilateral = cv.bilateralFilter(contrast_enhanced, 9, 75, 75)
@@ -251,78 +251,78 @@ def extract_generalized_features(contour, image):
 
 USB_TEMPLATES = {
     'Type-A': {
-        'aspect_ratio': (2.0, 2.8),  # Keep precise range for Type-A
-        'circularity': (0.01, 0.40),  # Keep lenient circularity
-        'solidity': (0.40, 0.98),  # Keep lenient solidity
-        'rect_similarity': (0.35, 0.98),  # Keep lenient rect_similarity
-        'ellipse_similarity': (0.0, 0.70),  # Keep lenient ellipse_similarity
-        'convexity': (1.0, 4.5),  # Keep lenient convexity
-        'corner_count': (4, 12),  # Keep corner count
-        'edge_density': (0.02, 0.45),  # Keep lenient edge density
-        'edge_corner_ratio': (1.0, 25.0),  # Keep lenient edge_corner_ratio
-        'edge_continuity': (1.1, 1.8),  # Keep lenient edge_continuity
-        'corner_std_dev': (10, 75),  # Keep lenient corner spread
-        'corner_mean_dist': (20, 160),  # Keep lenient corner distribution
+        'aspect_ratio': (2.0, 2.8),  
+        'circularity': (0.01, 0.40),  
+        'solidity': (0.40, 0.98),  
+        'rect_similarity': (0.35, 0.98), 
+        'ellipse_similarity': (0.0, 0.70), 
+        'convexity': (1.0, 4.5),  
+        'corner_count': (4, 12),  
+        'edge_density': (0.02, 0.45),  
+        'edge_corner_ratio': (1.0, 25.0),  
+        'edge_continuity': (1.1, 1.8),  
+        'corner_std_dev': (10, 75),  
+        'corner_mean_dist': (20, 160), 
     },
     'Type-C': {
-        'aspect_ratio': (1.8, 3.0),  # Keep range for Type-C
-        'circularity': (0.10, 0.50),  # Keep lenient circularity
-        'solidity': (0.60, 0.98),  # Keep lenient solidity
-        'rect_similarity': (0.60, 0.85),  # Moderate rectangle similarity
-        'ellipse_similarity': (0.30, 0.90),  # Keep lenient ellipse similarity
-        'ellipse_ratio': (0.25, 0.60),  # Keep lenient ellipse ratio
-        'corner_count': (4, 14),  # Keep lenient corner count
-        'edge_density': (0.02, 0.30),  # Keep lenient edge density
-        'edge_corner_ratio': (1.0, 10.0),  # Keep lenient edge-to-corner ratio
-        'edge_continuity': (1.0, 1.8),  # Keep lenient edge continuity
-        'corner_std_dev': (5, 45),  # Keep lenient corner spread
-        'corner_mean_dist': (10, 120),  # Keep lenient corner distribution
+        'aspect_ratio': (1.8, 3.0), 
+        'circularity': (0.10, 0.50),  
+        'solidity': (0.60, 0.98),  
+        'rect_similarity': (0.60, 0.85),  
+        'ellipse_similarity': (0.30, 0.90),  
+        'ellipse_ratio': (0.25, 0.60),  
+        'corner_count': (4, 14), 
+        'edge_density': (0.02, 0.30),  
+        'edge_corner_ratio': (1.0, 10.0),  
+        'edge_continuity': (1.0, 1.8),  
+        'corner_std_dev': (5, 45),  
+        'corner_mean_dist': (10, 120),  
     },
     'Mini': {
-        'aspect_ratio': (1.5, 3.0),  # Keep range for Mini
-        'circularity': (0.10, 0.45),  # Keep lenient circularity
-        'solidity': (0.65, 0.98),  # Keep lenient solidity
-        'rect_similarity': (0.50, 0.90),  # Keep lenient rect_similarity
-        'ellipse_similarity': (0.30, 0.90),  # Keep lenient ellipse_similarity
-        'trapezoid_score': (0.1, 0.95),  # More lenient trapezoid score
-        'convexity': (1.0, 2.5),  # Keep convexity range
-        'vertical_symmetry': (0.6, 0.95),  # Keep lenient vertical symmetry
-        'horizontal_symmetry': (0.5, 0.95),  # More lenient horizontal symmetry
-        'corner_count': (6, 14),  # Keep corner count
-        'edge_density': (0.07, 0.45),  # Keep lenient edge density
-        'edge_corner_ratio': (1.5, 25.0),  # Keep lenient edge_corner_ratio
-        'edge_continuity': (1.2, 1.8),  # Keep lenient edge_continuity
-        'corner_std_dev': (10, 45),  # Keep lenient corner spread
-        'corner_mean_dist': (20, 100),  # Keep lenient corner distribution
+        'aspect_ratio': (1.5, 3.0),  
+        'circularity': (0.10, 0.45),  
+        'solidity': (0.65, 0.98),  
+        'rect_similarity': (0.50, 0.90),  
+        'ellipse_similarity': (0.30, 0.90),  
+        'trapezoid_score': (0.1, 0.95),  
+        'convexity': (1.0, 2.5),  
+        'vertical_symmetry': (0.6, 0.95),  
+        'horizontal_symmetry': (0.5, 0.95),  
+        'corner_count': (6, 14),  
+        'edge_density': (0.07, 0.45),  
+        'edge_corner_ratio': (1.5, 25.0), 
+        'edge_continuity': (1.2, 1.8),  
+        'corner_std_dev': (10, 45),  
+        'corner_mean_dist': (20, 100),  
     },
      'Micro-B': {
-        'aspect_ratio': (1.5, 4.5),  # Expanded range for Micro-B
-        'circularity': (0.10, 0.40),  # More lenient circularity
-        'solidity': (0.40, 0.95),  # More lenient solidity
-        'rect_similarity': (0.30, 0.90),  # More lenient rect_similarity
-        'ellipse_similarity': (0.30, 0.90),  # More lenient ellipse_similarity
-        'convexity': (1.0, 2.0),  # More lenient convexity
-        'vertical_symmetry': (0.70, 0.95),  # More lenient vertical symmetry
-        'horizontal_symmetry': (0.70, 0.95),  # More lenient horizontal symmetry
-        'corner_count': (4, 12),  # More lenient corner count
-        'edge_density': (0.05, 0.20),  # More lenient edge density
-        'edge_corner_ratio': (0.5, 8.0),  # More lenient edge-to-corner ratio
-        'edge_continuity': (1.1, 1.8),  # More lenient edge continuity
-        'corner_std_dev': (10, 50),  # More lenient corner spread
-        'corner_mean_dist': (20, 100),  # More lenient corner distribution
+        'aspect_ratio': (1.5, 4.5),  
+        'circularity': (0.10, 0.40),  
+        'solidity': (0.40, 0.95),  
+        'rect_similarity': (0.30, 0.90),  
+        'ellipse_similarity': (0.30, 0.90),  
+        'convexity': (1.0, 2.0),  
+        'vertical_symmetry': (0.70, 0.95),  
+        'horizontal_symmetry': (0.70, 0.95),  
+        'corner_count': (4, 12),  
+        'edge_density': (0.05, 0.20),  
+        'edge_corner_ratio': (0.5, 8.0),  
+        'edge_continuity': (1.1, 1.8),  
+        'corner_std_dev': (10, 50),  
+        'corner_mean_dist': (20, 100),  
     },
     'RJ45': {
-        'aspect_ratio': (1.0, 1.4),  # Keep range for RJ45
-        'circularity': (0.01, 0.45),  # More lenient circularity
-        'solidity': (0.40, 1.0),  # More lenient solidity
-        'rect_similarity': (0.35, 1.0),  # More lenient rect_similarity
-        'ellipse_similarity': (0.30, 0.90),  # More lenient ellipse_similarity
-        'corner_count': (4, 16),  # More lenient corner count
-        'edge_density': (0.08, 0.40),  # More lenient edge density
-        'edge_corner_ratio': (1.0, 10.0),  # More lenient edge-to-corner ratio
-        'edge_continuity': (1.1, 1.8),  # More lenient edge continuity
-        'corner_std_dev': (5, 45),  # More lenient corner spread
-        'corner_mean_dist': (20, 100),  # More lenient corner distribution
+        'aspect_ratio': (1.0, 1.4),  
+        'circularity': (0.01, 0.45),  
+        'solidity': (0.40, 1.0),  
+        'rect_similarity': (0.35, 1.0),  
+        'ellipse_similarity': (0.30, 0.90),  
+        'corner_count': (4, 16),  
+        'edge_density': (0.08, 0.40),  
+        'edge_corner_ratio': (1.0, 10.0),  
+        'edge_continuity': (1.1, 1.8),  
+        'corner_std_dev': (5, 45),  
+        'corner_mean_dist': (20, 100),  
     }
 }
 
@@ -422,48 +422,48 @@ def classify_usb_general(features):
     
     if 1.8 <= aspect_ratio <= 3.0:
         type_c_score = 0.0
-        feature_scores['Type-C']['aspect_ratio'] = 0.40  # Increased weight
+        feature_scores['Type-C']['aspect_ratio'] = 0.40  
         
         
         if ellipse_similarity >= 0.50:
-            type_c_score += 0.45  # Increased weight
+            type_c_score += 0.45  
             feature_scores['Type-C']['ellipse_similarity'] = 0.45
         elif ellipse_similarity >= 0.30:
-            type_c_score += 0.35  # Increased weight
+            type_c_score += 0.35  
             feature_scores['Type-C']['ellipse_similarity'] = 0.35
             
         if 0.25 <= ellipse_ratio <= 0.60:
-            type_c_score += 0.40  # Increased weight
+            type_c_score += 0.40  
             feature_scores['Type-C']['ellipse_ratio'] = 0.40
             
         
         if 0.10 <= circularity <= 0.50:
-            type_c_score += 0.35  # Increased weight
+            type_c_score += 0.35  
             feature_scores['Type-C']['circularity'] = 0.35
             
         if 0.60 <= solidity <= 0.98:
-            type_c_score += 0.35  # Increased weight
+            type_c_score += 0.35  
             feature_scores['Type-C']['solidity'] = 0.35
             
         if 1.0 <= convexity <= 2.8:
-            type_c_score += 0.35  # Increased weight
+            type_c_score += 0.35  
             feature_scores['Type-C']['convexity'] = 0.35
             
-        # Edge and continuity features
+        
         if 1.0 <= edge_continuity <= 1.8:
-            type_c_score += 0.30  # Increased weight
+            type_c_score += 0.30  
             feature_scores['Type-C']['edge_continuity'] = 0.30
             
         if 0.02 <= edge_density <= 0.30:
-            type_c_score += 0.30  # Increased weight
+            type_c_score += 0.30  
             feature_scores['Type-C']['edge_density'] = 0.30
             
         if 1.0 <= edge_corner_ratio <= 10.0:
-            type_c_score += 0.30  # Increased weight
+            type_c_score += 0.30  
             feature_scores['Type-C']['edge_corner_ratio'] = 0.30
             
         if 4 <= corner_count <= 14:
-            type_c_score += 0.30  # Increased weight
+            type_c_score += 0.30  
             feature_scores['Type-C']['corner_count'] = 0.30
             
         type_scores['Type-C'] = max(0, type_c_score)
@@ -471,59 +471,59 @@ def classify_usb_general(features):
     
     if 1.5 <= aspect_ratio <= 3.0:
         mini_score = 0.0
-        feature_scores['Mini']['aspect_ratio'] = 0.45  # Increased weight
+        feature_scores['Mini']['aspect_ratio'] = 0.45  
         
         
         if trapezoid_score >= 0.3:
-            mini_score += 0.55  # Increased weight
+            mini_score += 0.55  
             feature_scores['Mini']['trapezoid_score'] = 0.55
         elif trapezoid_score >= 0.1:
-            mini_score += 0.40  # Increased weight
+            mini_score += 0.40  
             feature_scores['Mini']['trapezoid_score'] = 0.40
             
         if 0.5 <= horizontal_symmetry <= 0.95:
-            mini_score += 0.50  # Increased weight
+            mini_score += 0.50  
             feature_scores['Mini']['horizontal_symmetry'] = 0.50
             
         
         if 0.65 <= solidity <= 0.98:
-            mini_score += 0.45  # Increased weight
+            mini_score += 0.45  
             feature_scores['Mini']['solidity'] = 0.45
             
         if 1.0 <= convexity <= 2.5:
-            mini_score += 0.45  # Increased weight
+            mini_score += 0.45 
             feature_scores['Mini']['convexity'] = 0.45
             
         if 0.10 <= circularity <= 0.45:
-            mini_score += 0.40  # Increased weight
+            mini_score += 0.40  
             feature_scores['Mini']['circularity'] = 0.40
             
         
         if 1.2 <= edge_continuity <= 1.8:
-            mini_score += 0.40  # Increased weight
+            mini_score += 0.40  
             feature_scores['Mini']['edge_continuity'] = 0.40
             
         if 0.07 <= edge_density <= 0.45:
-            mini_score += 0.35  # Increased weight
+            mini_score += 0.35  
             feature_scores['Mini']['edge_density'] = 0.35
             
         if 1.5 <= edge_corner_ratio <= 25.0:
-            mini_score += 0.35  # Increased weight
+            mini_score += 0.35  
             feature_scores['Mini']['edge_corner_ratio'] = 0.35
             
         if 6 <= corner_count <= 14:
-            mini_score += 0.35  # Increased weight
+            mini_score += 0.35  
             feature_scores['Mini']['corner_count'] = 0.35
             
         type_scores['Mini'] = max(0, mini_score)
     
     
-    if 1.5 <= aspect_ratio <= 4.5:  # Expanded range for Micro-B
+    if 1.5 <= aspect_ratio <= 4.5:  
         micro_b_score = 0.0
-        feature_scores['Micro-B']['aspect_ratio'] = 0.40  # Increased weight
+        feature_scores['Micro-B']['aspect_ratio'] = 0.40  
         
         if 0.30 <= rect_similarity <= 0.90:
-            micro_b_score += 0.40  # Increased weight
+            micro_b_score += 0.40  
             feature_scores['Micro-B']['rect_similarity'] = 0.40
             
         if 0.10 <= circularity <= 0.40:
@@ -540,15 +540,15 @@ def classify_usb_general(features):
 
        
         if 4 <= corner_count <= 12:
-            micro_b_score += 0.30  # Increased weight
+            micro_b_score += 0.30  
             feature_scores['Micro-B']['corner_count'] = 0.30
             
         if 0.05 <= edge_density <= 0.20:
-            micro_b_score += 0.25  # Increased weight
+            micro_b_score += 0.25  
             feature_scores['Micro-B']['edge_density'] = 0.25
             
         if 0.5 <= edge_corner_ratio <= 8.0:
-            micro_b_score += 0.25  # Increased weight
+            micro_b_score += 0.25  
             feature_scores['Micro-B']['edge_corner_ratio'] = 0.25
             
         if 1.1 <= edge_continuity <= 1.8:
@@ -562,33 +562,33 @@ def classify_usb_general(features):
         rj45_score = 0.0
         feature_scores['RJ45']['aspect_ratio'] = 0.45  # Increased weight
         
-        if rect_similarity >= 0.35:  # More lenient rect_similarity
-            rj45_score += 0.45  # Increased weight
+        if rect_similarity >= 0.35:  
+            rj45_score += 0.45  
             feature_scores['RJ45']['rect_similarity'] = 0.45
             
         if 0.90 <= solidity <= 1.0:
-            rj45_score += 0.40  # Increased weight
+            rj45_score += 0.40  
             feature_scores['RJ45']['solidity'] = 0.40
             
-        if 0.01 <= circularity <= 0.45:  # More lenient circularity
-            rj45_score += 0.35  # Increased weight
+        if 0.01 <= circularity <= 0.45:  
+            rj45_score += 0.35  
             feature_scores['RJ45']['circularity'] = 0.35
             
         # Geometric features
-        if 4 <= corner_count <= 16:  # More lenient corner count
-            rj45_score += 0.35  # Increased weight
+        if 4 <= corner_count <= 16:  
+            rj45_score += 0.35  
             feature_scores['RJ45']['corner_count'] = 0.35
             
-        if 0.08 <= edge_density <= 0.40:  # More lenient edge density
-            rj45_score += 0.30  # Increased weight
+        if 0.08 <= edge_density <= 0.40:  
+            rj45_score += 0.30  
             feature_scores['RJ45']['edge_density'] = 0.30
             
-        if 1.0 <= edge_corner_ratio <= 10.0:  # More lenient edge_corner_ratio
-            rj45_score += 0.30  # Increased weight
+        if 1.0 <= edge_corner_ratio <= 10.0:  
+            rj45_score += 0.30  
             feature_scores['RJ45']['edge_corner_ratio'] = 0.30
             
-        if 1.1 <= edge_continuity <= 1.8:  # More lenient edge_continuity
-            rj45_score += 0.30  # Increased weight
+        if 1.1 <= edge_continuity <= 1.8:  
+            rj45_score += 0.30  
             feature_scores['RJ45']['edge_continuity'] = 0.30
             
         type_scores['RJ45'] = max(0, rj45_score)
@@ -677,7 +677,7 @@ def classify_usb_general(features):
     
     final_scores = {}
     for usb_type in type_scores:
-        final_scores[usb_type] = 0.10 * type_scores[usb_type] + 0.90 * template_scores.get(usb_type, 0)  # Increased weight for template matching
+        final_scores[usb_type] = 0.10 * type_scores[usb_type] + 0.90 * template_scores.get(usb_type, 0)  
     
     
     max_score = max(final_scores.values()) if final_scores else 0
@@ -834,7 +834,7 @@ def remove_sinusoidal(image, show_result=True):
 def main():
     image_path = "/kaggle/input/usb-type-again/Extra_images/micro_b_2.jpg"
     try:
-        # Load and resize image
+        
         image = cv.imread(image_path)
         if image is None:
             raise Exception(f"Could not load image from {image_path}")
@@ -846,7 +846,7 @@ def main():
         gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
         original_gray = gray.copy()
 
-        # Enhanced feature extraction pipeline
+        
         enhanced_gray = enhance_image_for_feature_extraction(gray)
         edges = extract_canny_edges(enhanced_gray)
         corner_mask, corner_coords = extract_harris_corners(enhanced_gray)
@@ -854,7 +854,7 @@ def main():
         enhanced_edges = apply_morphological_operations(cleaned_edges, operation='enhance')
         geometric_features = extract_geometric_features(enhanced_edges, corner_mask)
 
-        # Sinusoidal noise detection
+        
         has_noise = detect_sinusoidal_noise(gray, threshold_factor=3, min_peaks=150, show_spectrum=True)
         if has_noise:
             print("Sinusoidal noise detected. Applying noise removal...")
@@ -942,7 +942,7 @@ def main():
         for usb_type_name, score in sorted(scores.items(), key=lambda x: x[1], reverse=True):
             print(f"  {usb_type_name}: {score:.2f}")
         
-        # Visualization
+        
         plt.figure(figsize=(15, 10))
         plt.subplot(2, 2, 1)
         plt.imshow(cv.cvtColor(result_image, cv.COLOR_BGR2RGB))
